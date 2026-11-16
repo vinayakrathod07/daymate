@@ -10,14 +10,18 @@ import {
   RotateCw,
   CheckCircle2,
   Clock,
+  Maximize2,
+  Minimize2,
+  Shuffle,
 } from 'lucide-react';
-import { Flashcard, StudyNote, StudySession } from '../types/daymate';
+import { Flashcard, StudyNote, StudySession, VivaQuestionItem } from '../types/daymate';
 import { toLocalDateString, uid } from '../utils/storage';
 
 interface StudyStudioViewProps {
   notes: StudyNote[];
   flashcards: Flashcard[];
   sessions: StudySession[];
+  vivaQuestions: VivaQuestionItem[];
   onAddNote: (note: StudyNote) => void;
   onUpdateNote: (note: StudyNote) => void;
   onDeleteNote: (id: string) => void;
@@ -25,9 +29,12 @@ interface StudyStudioViewProps {
   onUpdateFlashcard: (card: Flashcard) => void;
   onDeleteFlashcard: (id: string) => void;
   onLogSession: (session: StudySession) => void;
+  onAddViva: (q: VivaQuestionItem) => void;
+  onToggleVivaConfident: (id: string) => void;
+  onDeleteViva: (id: string) => void;
 }
 
-type StudioTab = 'pomodoro' | 'notes' | 'flashcards';
+type StudioTab = 'pomodoro' | 'notes' | 'flashcards' | 'viva';
 
 function playCompletionChime() {
   try {
@@ -54,6 +61,7 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
   notes,
   flashcards,
   sessions,
+  vivaQuestions,
   onAddNote,
   onUpdateNote,
   onDeleteNote,
@@ -61,6 +69,9 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
   onUpdateFlashcard,
   onDeleteFlashcard,
   onLogSession,
+  onAddViva,
+  onToggleVivaConfident,
+  onDeleteViva,
 }) => {
   const [tab, setTab] = useState<StudioTab>('pomodoro');
 
@@ -69,6 +80,7 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
   const [customMinutes, setCustomMinutes] = useState(25);
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
+  const [zenMode, setZenMode] = useState(false);
   const [timerSubject, setTimerSubject] = useState('CSA3426 Frontend Using JS');
   const endTimestampRef = useRef<number | null>(null);
 
@@ -169,25 +181,68 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
     setNewBack('');
   };
 
+  // --- Viva Q&A State ---
+  const [vivaFilter, setVivaFilter] = useState('All');
+  const [revealedVivaIds, setRevealedVivaIds] = useState<Record<string, boolean>>({});
+  const [vivaSub, setVivaSub] = useState('CSA3426 Frontend Using JS');
+  const [vivaQ, setVivaQ] = useState('');
+  const [vivaA, setVivaA] = useState('');
+  const [vivaError, setVivaError] = useState('');
+
+  const vivaSubjects = useMemo(
+    () => ['All', ...Array.from(new Set(vivaQuestions.map((v) => v.subject)))],
+    [vivaQuestions],
+  );
+  const filteredViva = useMemo(
+    () => vivaQuestions.filter((v) => vivaFilter === 'All' || v.subject === vivaFilter),
+    [vivaQuestions, vivaFilter],
+  );
+
+  const handleAddViva = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vivaQ.trim() || !vivaA.trim()) {
+      setVivaError('Both viva question and model answer are required.');
+      return;
+    }
+    setVivaError('');
+    onAddViva({
+      id: uid('viv'),
+      subject: vivaSub.trim() || 'General',
+      question: vivaQ.trim(),
+      answer: vivaA.trim(),
+      confident: false,
+    });
+    setVivaQ('');
+    setVivaA('');
+  };
+
+  const pickRandomViva = () => {
+    if (filteredViva.length === 0) return;
+    const pick = filteredViva[Math.floor(Math.random() * filteredViva.length)];
+    setRevealedVivaIds({ [pick.id]: false });
+    const el = document.getElementById(`viva_${pick.id}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-200 dark:border-zinc-800">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
             Study Studio
           </h1>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Pomodoro focus timer, subject notes repository, and active recall flashcards.
+            Pomodoro focus timer with Zen mode, Markdown notes vault, flashcards, and Lab Viva prep bank.
           </p>
         </div>
 
-        <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg self-start">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg self-start">
           {(
             [
               { id: 'pomodoro', label: 'Focus Timer' },
               { id: 'notes', label: `Notes (${notes.length})` },
               { id: 'flashcards', label: `Flashcards (${flashcards.length})` },
+              { id: 'viva', label: `Viva Q&A (${vivaQuestions.length})` },
             ] as const
           ).map((item) => (
             <button
@@ -208,14 +263,38 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
 
       {/* TAB 1: POMODORO FOCUS TIMER */}
       {tab === 'pomodoro' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col items-center justify-center text-center space-y-6">
+        <div
+          className={
+            zenMode
+              ? 'fixed inset-0 z-50 bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center p-6'
+              : 'grid grid-cols-1 lg:grid-cols-12 gap-6'
+          }
+        >
+          <div
+            className={
+              zenMode
+                ? 'w-full max-w-xl p-10 bg-zinc-900 border border-zinc-800 rounded-2xl flex flex-col items-center text-center space-y-6'
+                : 'lg:col-span-7 p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col items-center justify-center text-center space-y-6 relative'
+            }
+          >
+            <button
+              type="button"
+              onClick={() => setZenMode((z) => !z)}
+              aria-label={zenMode ? 'Exit Zen Focus Mode' : 'Enter Zen Focus Mode'}
+              className="absolute top-4 right-4 inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              {zenMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <span>{zenMode ? 'Exit Zen' : 'Zen Mode'}</span>
+            </button>
+
             <div className="flex items-center gap-1.5 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
               <button
                 type="button"
                 onClick={() => selectPreset('Focus', 25)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md ${
-                  timerMode === 'Focus' ? 'bg-white dark:bg-zinc-900 shadow-xs' : 'text-zinc-500'
+                  timerMode === 'Focus'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                    : 'text-zinc-500'
                 }`}
               >
                 Focus (25m)
@@ -224,7 +303,9 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
                 type="button"
                 onClick={() => selectPreset('Short Break', 5)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md ${
-                  timerMode === 'Short Break' ? 'bg-white dark:bg-zinc-900 shadow-xs' : 'text-zinc-500'
+                  timerMode === 'Short Break'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                    : 'text-zinc-500'
                 }`}
               >
                 Short Break (5m)
@@ -233,14 +314,16 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
                 type="button"
                 onClick={() => selectPreset('Long Break', 15)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md ${
-                  timerMode === 'Long Break' ? 'bg-white dark:bg-zinc-900 shadow-xs' : 'text-zinc-500'
+                  timerMode === 'Long Break'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                    : 'text-zinc-500'
                 }`}
               >
                 Long Break (15m)
               </button>
             </div>
 
-            <div className="font-mono text-6xl sm:text-7xl font-bold tracking-tight tabular-nums text-zinc-900 dark:text-zinc-100">
+            <div className="font-mono text-6xl sm:text-7xl font-bold tracking-tight tabular-nums">
               {formattedClock}
             </div>
 
@@ -250,13 +333,13 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
                 value={timerSubject}
                 onChange={(e) => setTimerSubject(e.target.value)}
                 placeholder="What subject are you studying?"
-                className="w-full px-3.5 py-2 text-xs text-center bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                className="w-full px-3.5 py-2 text-xs text-center bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100"
               />
               <div className="flex items-center justify-center gap-3">
                 <button
                   type="button"
                   onClick={() => setIsRunning((r) => !r)}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                  className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
                 >
                   {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                   <span>{isRunning ? 'Pause' : 'Start Session'}</span>
@@ -264,7 +347,7 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
                 <button
                   type="button"
                   onClick={() => selectPreset(timerMode, customMinutes)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border border-zinc-300 dark:border-zinc-700 rounded-lg"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>Reset</span>
@@ -281,45 +364,51 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
                     completedAt: new Date().toISOString(),
                   })
                 }
-                className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 underline"
+                className="text-xs opacity-70 hover:opacity-100 underline"
               >
                 Log {customMinutes}m manually to study history
               </button>
             </div>
           </div>
 
-          <div className="lg:col-span-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col">
-            <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Completed Study Log</h2>
-              <span className="text-xs font-mono tabular-nums text-zinc-500">
-                {sessions.reduce((s, x) => s + x.minutes, 0)} min total
-              </span>
-            </div>
-            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 max-h-[380px] overflow-y-auto">
-              {sessions.length === 0 ? (
-                <li className="p-8 text-center text-xs text-zinc-400">
-                  Complete a focus timer session to record study hours.
-                </li>
-              ) : (
-                [...sessions].reverse().map((s) => (
-                  <li key={s.id} className="px-5 py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                        {s.subject}
-                      </p>
-                      <p className="text-[11px] text-zinc-500">
-                        {s.mode} · {new Date(s.completedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                      </p>
-                    </div>
-                    <span className="text-xs font-mono tabular-nums text-zinc-700 dark:text-zinc-300 flex items-center gap-1 shrink-0">
-                      <Clock className="w-3 h-3" />
-                      {s.minutes}m
-                    </span>
+          {!zenMode && (
+            <div className="lg:col-span-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col">
+              <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+                <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Completed Study Log</h2>
+                <span className="text-xs font-mono tabular-nums text-zinc-500">
+                  {sessions.reduce((s, x) => s + x.minutes, 0)} min total
+                </span>
+              </div>
+              <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 max-h-[380px] overflow-y-auto">
+                {sessions.length === 0 ? (
+                  <li className="p-8 text-center text-xs text-zinc-400">
+                    Complete a focus timer session to record study hours.
                   </li>
-                ))
-              )}
-            </ul>
-          </div>
+                ) : (
+                  [...sessions].reverse().map((s) => (
+                    <li key={s.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                          {s.subject}
+                        </p>
+                        <p className="text-[11px] text-zinc-500">
+                          {s.mode} ·{' '}
+                          {new Date(s.completedAt).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                          })}
+                        </p>
+                      </div>
+                      <span className="text-xs font-mono tabular-nums text-zinc-700 dark:text-zinc-300 flex items-center gap-1 shrink-0">
+                        <Clock className="w-3 h-3" />
+                        {s.minutes}m
+                      </span>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -462,7 +551,7 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
                       onUpdateNote({ ...activeNote, content: e.target.value, updatedAt: toLocalDateString() })
                     }
                     rows={14}
-                    className="w-full p-3.5 text-sm font-mono leading-relaxed bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-200"
+                    className="w-full p-3.5 text-sm font-mono leading-relaxed bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg"
                   />
                 )}
 
@@ -483,7 +572,7 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
         </div>
       )}
 
-      {/* TAB 3: ACTIVE RECALL FLASHCARDS */}
+      {/* TAB 3: FLASHCARDS */}
       {tab === 'flashcards' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 space-y-4">
@@ -629,6 +718,137 @@ export const StudyStudioView: React.FC<StudyStudioViewProps> = ({
               className="w-full py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
             >
               Add Flashcard
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* TAB 4: LAB VIVA & INTERVIEW PREP BANK */}
+      {tab === 'viva' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {vivaSubjects.map((sub) => (
+                  <button
+                    key={sub}
+                    type="button"
+                    onClick={() => setVivaFilter(sub)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md border ${
+                      vivaFilter === sub
+                        ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100'
+                        : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={pickRandomViva}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <Shuffle className="w-3.5 h-3.5" />
+                <span>Random Drill</span>
+              </button>
+            </div>
+
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl divide-y divide-zinc-200 dark:divide-zinc-800">
+              {filteredViva.map((item) => {
+                const isOpen = !!revealedVivaIds[item.id];
+                return (
+                  <div key={item.id} id={`viva_${item.id}`} className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] text-zinc-500">{item.subject}</p>
+                        <p className="mt-0.5 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                          {item.question}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteViva(item.id)}
+                        aria-label="Delete viva question"
+                        className="text-zinc-400 hover:text-red-600 shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {isOpen && (
+                      <p className="p-3 text-xs leading-relaxed bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-700 dark:text-zinc-300">
+                        {item.answer}
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRevealedVivaIds((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
+                        }
+                        className="text-xs font-medium underline text-zinc-700 dark:text-zinc-300"
+                      >
+                        {isOpen ? 'Hide Answer' : 'Reveal Answer'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onToggleVivaConfident(item.id)}
+                        className={`text-xs font-medium ${
+                          item.confident ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                        }`}
+                      >
+                        {item.confident ? 'Confident' : 'Needs Practice'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <form
+            onSubmit={handleAddViva}
+            className="lg:col-span-5 p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3.5 self-start"
+            noValidate
+          >
+            <h2 className="text-base font-bold">Add Viva / Exam Question</h2>
+            <div>
+              <label className="block text-xs font-medium mb-1">Subject</label>
+              <input
+                type="text"
+                value={vivaSub}
+                onChange={(e) => setVivaSub(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Viva Question</label>
+              <textarea
+                value={vivaQ}
+                onChange={(e) => setVivaQ(e.target.value)}
+                rows={2}
+                placeholder="e.g., What is closure in JavaScript?"
+                className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Model Answer</label>
+              <textarea
+                value={vivaA}
+                onChange={(e) => setVivaA(e.target.value)}
+                rows={3}
+                placeholder="A closure is a function bundled together with references to its lexical environment..."
+                className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+            </div>
+            {vivaError && <p className="text-xs text-red-600 dark:text-red-400">{vivaError}</p>}
+            <button
+              type="submit"
+              className="w-full py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
+            >
+              Add Viva Question
             </button>
           </form>
         </div>

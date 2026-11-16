@@ -11,25 +11,33 @@ import {
   ChevronUp,
   X,
 } from 'lucide-react';
-import { TaskCategory, TaskItem, TaskPriority, TaskStatus } from '../types/daymate';
-import { daysUntil, downloadTextFile, exportTasksToCsv, formatReadableDate, toLocalDateString, uid } from '../utils/storage';
+import { ProjectMilestone, TaskCategory, TaskItem, TaskPriority, TaskStatus } from '../types/daymate';
+import { addDays, daysUntil, downloadTextFile, exportTasksToCsv, formatReadableDate, toLocalDateString, uid } from '../utils/storage';
 
 interface TasksViewProps {
   tasks: TaskItem[];
+  milestones: ProjectMilestone[];
   onAddTask: (task: TaskItem) => void;
   onUpdateTask: (task: TaskItem) => void;
   onDeleteTask: (taskId: string) => void;
   onClearCompleted: () => void;
+  onAddMilestone: (ms: ProjectMilestone) => void;
+  onToggleMilestone: (id: string) => void;
+  onDeleteMilestone: (id: string) => void;
 }
 
 export const TasksView: React.FC<TasksViewProps> = ({
   tasks,
+  milestones,
   onAddTask,
   onUpdateTask,
   onDeleteTask,
   onClearCompleted,
+  onAddMilestone,
+  onToggleMilestone,
+  onDeleteMilestone,
 }) => {
-  const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'board' | 'milestones'>('list');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed' | 'overdue'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'All' | TaskPriority>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,7 +45,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [newSubtaskText, setNewSubtaskText] = useState('');
 
-  // Modal state for Add/Edit
+  // Task Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [formTitle, setFormTitle] = useState('');
@@ -48,6 +56,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [formMinutes, setFormMinutes] = useState(45);
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState('');
+
+  // Milestone form
+  const [msTitle, setMsTitle] = useState('');
+  const [msPhase, setMsPhase] = useState('Phase 4');
+  const [msDueDate, setMsDueDate] = useState(addDays(7));
+  const [msDeliverable, setMsDeliverable] = useState('');
+  const [msError, setMsError] = useState('');
 
   const counts = useMemo(() => {
     const total = tasks.length;
@@ -193,13 +208,31 @@ export const TasksView: React.FC<TasksViewProps> = ({
     downloadTextFile(`student_daymate_tasks_${toLocalDateString()}.csv`, csv, 'text/csv');
   };
 
+  const handleCreateMilestone = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!msTitle.trim()) {
+      setMsError('Milestone title is required.');
+      return;
+    }
+    setMsError('');
+    onAddMilestone({
+      id: uid('ms'),
+      title: msTitle.trim(),
+      phase: msPhase.trim() || 'Phase',
+      dueDate: msDueDate || toLocalDateString(),
+      completed: false,
+      deliverable: msDeliverable.trim() || 'Submission & review',
+    });
+    setMsTitle('');
+    setMsDeliverable('');
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header & Summary */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-200 dark:border-zinc-800">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Tasks &amp; Assignments
+            Tasks, Assignments &amp; Project Milestones
           </h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
             <span>{counts.total} total</span>
@@ -220,7 +253,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
           <button
             type="button"
             onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
@@ -229,7 +262,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
             <button
               type="button"
               onClick={onClearCompleted}
-              className="px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap shrink-0"
+              className="px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 whitespace-nowrap"
             >
               Clear Completed
             </button>
@@ -237,7 +270,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
           <button
             type="button"
             onClick={openNewModal}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 whitespace-nowrap"
           >
             <Plus className="w-4 h-4" />
             <span>New Task</span>
@@ -245,34 +278,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
         </div>
       </div>
 
-      {/* Filter & Search Toolbar */}
+      {/* Mode Switcher & Filters */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-            {(['all', 'pending', 'completed', 'overdue'] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setStatusFilter(tab)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-colors whitespace-nowrap shrink-0 ${
-                  statusFilter === tab
-                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
           <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
                 viewMode === 'list'
                   ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+                  : 'text-zinc-600 dark:text-zinc-400'
               }`}
             >
               List View
@@ -280,54 +296,189 @@ export const TasksView: React.FC<TasksViewProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('board')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
                 viewMode === 'board'
                   ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+                  : 'text-zinc-600 dark:text-zinc-400'
               }`}
             >
               Kanban Board
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('milestones')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                viewMode === 'milestones'
+                  ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400'
+              }`}
+            >
+              Project Milestones ({milestones.length})
+            </button>
           </div>
+
+          {viewMode !== 'milestones' && (
+            <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
+              {(['all', 'pending', 'completed', 'overdue'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setStatusFilter(tab)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-colors whitespace-nowrap ${
+                    statusFilter === tab
+                      ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                      : 'text-zinc-600 dark:text-zinc-400'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative flex-1 sm:w-56">
-            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search tasks or subjects..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-200"
-            />
+        {viewMode !== 'milestones' && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="relative flex-1 sm:w-56">
+              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tasks or subjects..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+            </div>
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value as 'All' | TaskPriority)}
+              aria-label="Filter by priority"
+              className="px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+            >
+              <option value="All">All Priorities</option>
+              <option value="High">High Priority</option>
+              <option value="Medium">Medium Priority</option>
+              <option value="Low">Low Priority</option>
+            </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'dueDate' | 'priority' | 'created')}
+              aria-label="Sort tasks"
+              className="px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+            >
+              <option value="dueDate">Sort: Due Date</option>
+              <option value="priority">Sort: Priority</option>
+              <option value="created">Sort: Recently Added</option>
+            </select>
           </div>
-          <select
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value as 'All' | TaskPriority)}
-            aria-label="Filter by priority"
-            className="px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg focus:outline-none"
-          >
-            <option value="All">All Priorities</option>
-            <option value="High">High Priority</option>
-            <option value="Medium">Medium Priority</option>
-            <option value="Low">Low Priority</option>
-          </select>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'dueDate' | 'priority' | 'created')}
-            aria-label="Sort tasks"
-            className="px-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg focus:outline-none"
-          >
-            <option value="dueDate">Sort: Due Date</option>
-            <option value="priority">Sort: Priority</option>
-            <option value="created">Sort: Recently Added</option>
-          </select>
-        </div>
+        )}
       </div>
 
-      {/* Empty State */}
-      {filteredTasks.length === 0 ? (
+      {/* PROJECT MILESTONES VIEW */}
+      {viewMode === 'milestones' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+              <h2 className="text-base font-bold">Mini-Project &amp; Lab Milestones</h2>
+              <span className="text-xs font-mono tabular-nums text-zinc-500">
+                {milestones.filter((m) => m.completed).length}/{milestones.length} done
+              </span>
+            </div>
+            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {milestones.map((ms) => (
+                <li key={ms.id} className="px-5 py-4 flex items-start justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onToggleMilestone(ms.id)}
+                    className="mt-0.5 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 shrink-0"
+                  >
+                    {ms.completed ? (
+                      <CheckSquare className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className={`text-sm font-semibold ${
+                        ms.completed ? 'line-through text-zinc-400' : 'text-zinc-900 dark:text-zinc-100'
+                      }`}
+                    >
+                      {ms.phase}: {ms.title}
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-500">
+                      Deliverable: {ms.deliverable} · Due {formatReadableDate(ms.dueDate)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteMilestone(ms.id)}
+                    className="text-zinc-400 hover:text-red-600 shrink-0"
+                    aria-label="Delete milestone"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <form
+            onSubmit={handleCreateMilestone}
+            className="lg:col-span-5 p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3.5 self-start"
+            noValidate
+          >
+            <h2 className="text-base font-bold">Add Project Milestone</h2>
+            <div>
+              <label className="block text-xs font-medium mb-1">Milestone Title</label>
+              <input
+                type="text"
+                value={msTitle}
+                onChange={(e) => setMsTitle(e.target.value)}
+                placeholder="e.g., Final Viva Voce Presentation"
+                className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium mb-1">Phase</label>
+                <input
+                  type="text"
+                  value={msPhase}
+                  onChange={(e) => setMsPhase(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Target Date</label>
+                <input
+                  type="date"
+                  value={msDueDate}
+                  onChange={(e) => setMsDueDate(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-mono tabular-nums bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Deliverable</label>
+              <input
+                type="text"
+                value={msDeliverable}
+                onChange={(e) => setMsDeliverable(e.target.value)}
+                placeholder="e.g., Printed report + slides"
+                className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+            </div>
+            {msError && <p className="text-xs text-red-600 dark:text-red-400">{msError}</p>}
+            <button
+              type="submit"
+              className="w-full py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
+            >
+              Add Milestone
+            </button>
+          </form>
+        </div>
+      ) : filteredTasks.length === 0 ? (
         <div className="p-12 text-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">No matching tasks found</p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -336,14 +487,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
           <button
             type="button"
             onClick={openNewModal}
-            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200"
+            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add First Task</span>
           </button>
         </div>
       ) : viewMode === 'list' ? (
-        /* List View */
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
           <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {filteredTasks.map((task) => {
@@ -352,7 +502,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
               const completedSubs = task.subtasks.filter((s) => s.completed).length;
 
               return (
-                <li key={task.id} className="transition-colors">
+                <li key={task.id}>
                   <div className="px-5 py-4 flex items-start justify-between gap-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
                     <button
                       type="button"
@@ -443,12 +593,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Expanded Subtasks & Notes Drawer */}
                   {isExpanded && (
                     <div className="px-14 pb-4 pt-1 bg-zinc-50/70 dark:bg-zinc-950/50 border-t border-zinc-100 dark:border-zinc-800/80 space-y-3">
-                      {task.notes && (
-                        <p className="text-xs text-zinc-600 dark:text-zinc-400">{task.notes}</p>
-                      )}
+                      {task.notes && <p className="text-xs text-zinc-600 dark:text-zinc-400">{task.notes}</p>}
                       <div className="space-y-1.5">
                         <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Subtask Checklist</p>
                         {task.subtasks.map((sub) => (
@@ -466,9 +613,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                             </button>
                             <span
                               className={`text-xs ${
-                                sub.completed
-                                  ? 'line-through text-zinc-400'
-                                  : 'text-zinc-700 dark:text-zinc-300'
+                                sub.completed ? 'line-through text-zinc-400' : 'text-zinc-700 dark:text-zinc-300'
                               }`}
                             >
                               {sub.title}
@@ -487,7 +632,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                               }
                             }}
                             placeholder="Add a checklist step..."
-                            className="flex-1 px-2.5 py-1 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md focus:outline-none"
+                            className="flex-1 px-2.5 py-1 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md"
                           />
                           <button
                             type="button"
@@ -506,7 +651,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
           </ul>
         </div>
       ) : (
-        /* Kanban Board View */
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {(
             [
@@ -532,9 +676,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                     colTasks.map((task) => (
                       <div key={task.id} className="p-4 space-y-2.5">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                            {task.title}
-                          </p>
+                          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{task.title}</p>
                           <button
                             type="button"
                             onClick={() => openEditModal(task)}
@@ -584,59 +726,71 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
                 {editingTaskId ? 'Edit Task' : 'Create New Task'}
               </h2>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-                aria-label="Close modal"
-              >
+              <button type="button" onClick={() => setIsModalOpen(false)} aria-label="Close modal">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <form onSubmit={handleSaveForm} className="p-6 space-y-4" noValidate>
               <div>
-                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Task Title
-                </label>
+                <label className="block text-xs font-medium mb-1">Task Title</label>
                 <input
                   type="text"
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
                   placeholder="e.g., Prepare DBMS ER Diagram Submission"
-                  className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-200"
+                  className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Subject
-                  </label>
+                  <label className="block text-xs font-medium mb-1">Subject</label>
                   <input
                     type="text"
                     value={formSubject}
                     onChange={(e) => setFormSubject(e.target.value)}
-                    className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg focus:outline-none"
+                    className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Due Date
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium">Due Date</label>
+                    <div className="flex gap-1.5 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setFormDueDate(toLocalDateString())}
+                        className="underline text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormDueDate(addDays(1))}
+                        className="underline text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                      >
+                        Tomorrow
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormDueDate(addDays(7))}
+                        className="underline text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                      >
+                        +7d
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="date"
                     value={formDueDate}
                     onChange={(e) => setFormDueDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono tabular-nums bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg focus:outline-none"
+                    className="w-full px-3 py-2 text-sm font-mono tabular-nums bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Priority
-                  </label>
+                  <label className="block text-xs font-medium mb-1">Priority</label>
                   <select
                     value={formPriority}
                     onChange={(e) => setFormPriority(e.target.value as TaskPriority)}
@@ -648,9 +802,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Category
-                  </label>
+                  <label className="block text-xs font-medium mb-1">Category</label>
                   <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value as TaskCategory)}
@@ -664,9 +816,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Est. Minutes
-                  </label>
+                  <label className="block text-xs font-medium mb-1">Est. Minutes</label>
                   <input
                     type="number"
                     min={5}
@@ -679,9 +829,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Notes (Optional)
-                </label>
+                <label className="block text-xs font-medium mb-1">Notes (Optional)</label>
                 <textarea
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
@@ -701,13 +849,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  className="px-4 py-2 text-xs font-medium border border-zinc-300 dark:border-zinc-700 rounded-lg"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
                 >
                   {editingTaskId ? 'Save Changes' : 'Create Task'}
                 </button>

@@ -1,7 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, CheckSquare, Square, ExternalLink } from 'lucide-react';
-import { BookmarkItem, DayMateState, ExpenseItem, HabitItem } from '../types/daymate';
-import { addDays, calculateHabitStreak, formatReadableDate, toLocalDateString, uid } from '../utils/storage';
+import { Plus, Trash2, CheckSquare, Square, ExternalLink, Clock } from 'lucide-react';
+import {
+  BookmarkItem,
+  DayMateState,
+  DirectoryContact,
+  ExpenseItem,
+  HabitItem,
+  TimeBlockItem,
+} from '../types/daymate';
+import {
+  addDays,
+  calculateHabitStreak,
+  formatReadableDate,
+  formatTime12h,
+  toLocalDateString,
+  uid,
+} from '../utils/storage';
 
 interface CampusLifeViewProps {
   state: DayMateState;
@@ -13,6 +27,10 @@ interface CampusLifeViewProps {
   onDeleteHabit: (id: string) => void;
   onAddBookmark: (bm: BookmarkItem) => void;
   onDeleteBookmark: (id: string) => void;
+  onAddTimeBlock: (tb: TimeBlockItem) => void;
+  onDeleteTimeBlock: (id: string) => void;
+  onAddContact: (c: DirectoryContact) => void;
+  onDeleteContact: (id: string) => void;
 }
 
 export const CampusLifeView: React.FC<CampusLifeViewProps> = ({
@@ -25,8 +43,12 @@ export const CampusLifeView: React.FC<CampusLifeViewProps> = ({
   onDeleteHabit,
   onAddBookmark,
   onDeleteBookmark,
+  onAddTimeBlock,
+  onDeleteTimeBlock,
+  onAddContact,
+  onDeleteContact,
 }) => {
-  const [subTab, setSubTab] = useState<'expenses' | 'habits' | 'bookmarks'>('expenses');
+  const [subTab, setSubTab] = useState<'expenses' | 'habits' | 'timeblocks' | 'contacts' | 'bookmarks'>('expenses');
 
   // Expense form
   const [expTitle, setExpTitle] = useState('');
@@ -39,6 +61,21 @@ export const CampusLifeView: React.FC<CampusLifeViewProps> = ({
   const [habitName, setHabitName] = useState('');
   const [habitCategory, setHabitCategory] = useState<HabitItem['category']>('Study');
   const [habitError, setHabitError] = useState('');
+
+  // Time-block form
+  const [tbStart, setTbStart] = useState('18:30');
+  const [tbEnd, setTbEnd] = useState('19:30');
+  const [tbTitle, setTbTitle] = useState('');
+  const [tbCategory, setTbCategory] = useState<TimeBlockItem['category']>('Study');
+  const [tbError, setTbError] = useState('');
+
+  // Contact form
+  const [cName, setCName] = useState('');
+  const [cRole, setCRole] = useState<DirectoryContact['role']>('Classmate');
+  const [cDept, setCDept] = useState('');
+  const [cEmail, setCEmail] = useState('');
+  const [cPhone, setCPhone] = useState('');
+  const [cError, setCError] = useState('');
 
   // Bookmark form
   const [bmTitle, setBmTitle] = useState('');
@@ -99,6 +136,48 @@ export const CampusLifeView: React.FC<CampusLifeViewProps> = ({
     setHabitName('');
   };
 
+  const handleAddTimeBlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tbTitle.trim()) {
+      setTbError('Activity title is required.');
+      return;
+    }
+    if (tbEnd <= tbStart) {
+      setTbError('End time must be after start time.');
+      return;
+    }
+    setTbError('');
+    onAddTimeBlock({
+      id: uid('tb'),
+      startTime: tbStart,
+      endTime: tbEnd,
+      title: tbTitle.trim(),
+      category: tbCategory,
+    });
+    setTbTitle('');
+  };
+
+  const handleAddContact = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cName.trim()) {
+      setCError('Contact name is required.');
+      return;
+    }
+    setCError('');
+    onAddContact({
+      id: uid('cnt'),
+      name: cName.trim(),
+      role: cRole,
+      subjectOrDept: cDept.trim() || 'BCA',
+      email: cEmail.trim(),
+      phoneOrRoom: cPhone.trim(),
+    });
+    setCName('');
+    setCDept('');
+    setCEmail('');
+    setCPhone('');
+  };
+
   const handleAddBookmark = (e: React.FormEvent) => {
     e.preventDefault();
     if (!bmTitle.trim() || !bmUrl.trim()) {
@@ -127,16 +206,18 @@ export const CampusLifeView: React.FC<CampusLifeViewProps> = ({
             Campus Life &amp; Daily Tools
           </h1>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Student allowance tracker, 7-day habit streaks, and quick academic resource bookmarks.
+            Allowance budget, 7-day habits, daily time-blocking, academic contacts, and resource bookmarks.
           </p>
         </div>
 
-        <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg self-start">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg self-start">
           {(
             [
-              { id: 'expenses', label: 'Expense Tracker' },
-              { id: 'habits', label: 'Daily Habits' },
-              { id: 'bookmarks', label: 'Resource Links' },
+              { id: 'expenses', label: 'Expenses' },
+              { id: 'habits', label: 'Habits' },
+              { id: 'timeblocks', label: 'Time-Blocks' },
+              { id: 'contacts', label: 'Directory' },
+              { id: 'bookmarks', label: 'Bookmarks' },
             ] as const
           ).map((t) => (
             <button
@@ -394,6 +475,208 @@ export const CampusLifeView: React.FC<CampusLifeViewProps> = ({
               <span>Add Habit</span>
             </button>
             {habitError && <span className="text-xs text-red-600 dark:text-red-400 w-full">{habitError}</span>}
+          </form>
+        </div>
+      )}
+
+      {/* DAILY TIME-BLOCKS PLANNER */}
+      {subTab === 'timeblocks' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
+              <h2 className="text-base font-bold">Daily Time-Block Routine</h2>
+            </div>
+            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {[...state.timeBlocks]
+                .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                .map((blk) => (
+                  <li key={blk.id} className="px-5 py-3.5 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <span className="font-mono text-xs tabular-nums text-zinc-500 flex items-center gap-1.5 shrink-0">
+                        <Clock className="w-3.5 h-3.5" />
+                        {formatTime12h(blk.startTime)} – {formatTime12h(blk.endTime)}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                          {blk.title}
+                        </p>
+                        <p className="text-[11px] text-zinc-500">{blk.category}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteTimeBlock(blk.id)}
+                      className="text-zinc-400 hover:text-red-600 shrink-0"
+                      aria-label="Delete time block"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          </div>
+
+          <form
+            onSubmit={handleAddTimeBlock}
+            className="lg:col-span-5 p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3.5 self-start"
+            noValidate
+          >
+            <h2 className="text-base font-bold">Add Time-Block</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium mb-1">Start</label>
+                <input
+                  type="time"
+                  value={tbStart}
+                  onChange={(e) => setTbStart(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">End</label>
+                <input
+                  type="time"
+                  value={tbEnd}
+                  onChange={(e) => setTbEnd(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Activity Title</label>
+              <input
+                type="text"
+                value={tbTitle}
+                onChange={(e) => setTbTitle(e.target.value)}
+                placeholder="e.g., Operating Systems Revision"
+                className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Category</label>
+              <select
+                value={tbCategory}
+                onChange={(e) => setTbCategory(e.target.value as TimeBlockItem['category'])}
+                className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              >
+                <option value="Study">Study</option>
+                <option value="Lecture">Lecture</option>
+                <option value="Project">Project</option>
+                <option value="Break">Break</option>
+              </select>
+            </div>
+            {tbError && <p className="text-xs text-red-600 dark:text-red-400">{tbError}</p>}
+            <button
+              type="submit"
+              className="w-full py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
+            >
+              Add Block
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* ACADEMIC DIRECTORY */}
+      {subTab === 'contacts' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4 self-start">
+            {state.contacts.map((c) => (
+              <div
+                key={c.id}
+                className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-1.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-medium text-zinc-500">
+                      {c.role} · {c.subjectOrDept}
+                    </p>
+                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{c.name}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteContact(c.id)}
+                    className="text-zinc-400 hover:text-red-600"
+                    aria-label="Delete contact"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {c.email && <p className="text-xs font-mono text-zinc-600 dark:text-zinc-400 break-all">{c.email}</p>}
+                {c.phoneOrRoom && <p className="text-xs text-zinc-500">{c.phoneOrRoom}</p>}
+              </div>
+            ))}
+          </div>
+
+          <form
+            onSubmit={handleAddContact}
+            className="lg:col-span-5 p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3 self-start"
+            noValidate
+          >
+            <h2 className="text-base font-bold">Add Faculty or Peer Contact</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={cName}
+                  onChange={(e) => setCName(e.target.value)}
+                  placeholder="Dr. Kavitha Rao"
+                  className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Role</label>
+                <select
+                  value={cRole}
+                  onChange={(e) => setCRole(e.target.value as DirectoryContact['role'])}
+                  className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                >
+                  <option value="Faculty">Faculty</option>
+                  <option value="Classmate">Classmate</option>
+                  <option value="Lab Partner">Lab Partner</option>
+                  <option value="Mentor">Mentor</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Subject / Department</label>
+              <input
+                type="text"
+                value={cDept}
+                onChange={(e) => setCDept(e.target.value)}
+                placeholder="Operating Systems"
+                className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium mb-1">Email</label>
+                <input
+                  type="email"
+                  value={cEmail}
+                  onChange={(e) => setCEmail(e.target.value)}
+                  placeholder="faculty@presidency.in"
+                  className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Cabin / Phone</label>
+                <input
+                  type="text"
+                  value={cPhone}
+                  onChange={(e) => setCPhone(e.target.value)}
+                  placeholder="Cabin B-201"
+                  className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg"
+                />
+              </div>
+            </div>
+            {cError && <p className="text-xs text-red-600 dark:text-red-400">{cError}</p>}
+            <button
+              type="submit"
+              className="w-full py-2 text-xs font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
+            >
+              Save Contact
+            </button>
           </form>
         </div>
       )}

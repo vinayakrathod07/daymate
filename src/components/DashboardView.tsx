@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Calendar,
+  Bell,
 } from 'lucide-react';
 import {
   DayMateState,
@@ -51,9 +52,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [quickDueDate, setQuickDueDate] = useState(toLocalDateString());
   const [quickPriority, setQuickPriority] = useState<TaskPriority>('Medium');
   const [quickError, setQuickError] = useState('');
+  const [reminderNotice, setReminderNotice] = useState('');
 
   const todayStr = toLocalDateString();
-  const jsDay = new Date().getDay(); // 0=Sun, 1=Mon..6=Sat
+  const jsDay = new Date().getDay();
   const activeWeekday: WeekDay = jsDay >= 1 && jsDay <= 6 ? WEEK_DAYS[jsDay - 1] : 'Mon';
   const isSunday = jsDay === 0;
 
@@ -61,6 +63,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const completedTasks = state.tasks.filter((t) => t.completed).length;
   const pendingTasks = totalTasks - completedTasks;
   const overdueTasks = state.tasks.filter((t) => !t.completed && t.dueDate && daysUntil(t.dueDate) < 0);
+  const dueTodayTasks = state.tasks.filter((t) => !t.completed && t.dueDate === todayStr);
 
   const totalAttended = state.attendance.reduce((sum, s) => sum + s.attended, 0);
   const totalClasses = state.attendance.reduce((sum, s) => sum + s.total, 0);
@@ -80,10 +83,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const nextExam = upcomingExams[0];
 
   const weeklyFocusMinutes = state.studySessions
-    .filter((s) => {
-      const diff = Date.now() - new Date(s.completedAt).getTime();
-      return diff <= 7 * 86400000;
-    })
+    .filter((s) => Date.now() - new Date(s.completedAt).getTime() <= 7 * 86400000)
     .reduce((acc, s) => acc + s.minutes, 0);
 
   const urgentTasks = [...state.tasks]
@@ -103,7 +103,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       return;
     }
     setQuickError('');
-    const newTask: TaskItem = {
+    onAddTask({
       id: uid('tsk'),
       title: trimmed,
       subject: quickSubject.trim() || 'General',
@@ -115,9 +115,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       estimatedMinutes: 30,
       subtasks: [],
       createdAt: todayStr,
-    };
-    onAddTask(newTask);
+    });
     setQuickTitle('');
+  };
+
+  const handleSendBrowserReminder = async () => {
+    if (!('Notification' in window)) {
+      setReminderNotice(
+        `Summary: ${dueTodayTasks.length} due today, ${overdueTasks.length} overdue, ${lowAttendanceSubjects.length} attendance alerts.`,
+      );
+      return;
+    }
+    const perm =
+      Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    const msg = `${dueTodayTasks.length} task(s) due today · ${overdueTasks.length} overdue · ${
+      nextExam ? `Next exam in ${daysUntil(nextExam.date)}d` : 'No upcoming exams'
+    }`;
+    if (perm === 'granted') {
+      new Notification('Student DayMate Reminder', { body: msg });
+      setReminderNotice('Browser reminder dispatched.');
+    } else {
+      setReminderNotice(`In-app reminder: ${msg}`);
+    }
   };
 
   const hour = new Date().getHours();
@@ -148,9 +167,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </span>
           <span aria-hidden="true">·</span>
-          <span className="font-mono tabular-nums">{state.profile.rollNumber}</span>
+          <button
+            type="button"
+            onClick={handleSendBrowserReminder}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 border border-zinc-300 dark:border-zinc-700 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Trigger Due-Today Reminder</span>
+          </button>
         </div>
       </div>
+
+      {reminderNotice && (
+        <div className="px-4 py-2.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-700 dark:text-zinc-300">
+          {reminderNotice}
+        </div>
+      )}
 
       {/* 4-Column KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -252,7 +284,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
           <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-            {state.notes.length} notes · {state.flashcards.length} flashcards saved
+            {state.notes.length} notes · {state.vivaQuestions.length} viva Q&amp;As
           </p>
         </button>
       </div>
@@ -265,7 +297,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       >
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Quick Add Task</h2>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">Saves directly to localStorage</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {state.profile.authProvider === 'google' ? 'Syncs with Google Cloud & localStorage' : 'Saves to localStorage'}
+          </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
           <input
@@ -320,7 +354,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Main Two-Column Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left 7 Cols: Urgent Deadlines + Today's Timetable */}
         <div className="lg:col-span-7 space-y-6">
           <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
             <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
@@ -392,7 +425,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 : 'text-zinc-600 dark:text-zinc-400'
                           }`}
                         >
-                          {diff < 0 ? `${Math.abs(diff)}d overdue` : diff === 0 ? 'Due today' : formatReadableDate(task.dueDate)}
+                          {diff < 0
+                            ? `${Math.abs(diff)}d overdue`
+                            : diff === 0
+                              ? 'Due today'
+                              : formatReadableDate(task.dueDate)}
                         </span>
                       </div>
                     </li>
@@ -442,9 +479,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </ul>
             )}
           </section>
+
+          {/* Today's Time-Block Preview */}
+          <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+            <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+                Daily Study Time-Blocks
+              </h2>
+              <button
+                type="button"
+                onClick={() => onNavigate('campus')}
+                className="text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+              >
+                Edit schedule
+              </button>
+            </div>
+            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {[...state.timeBlocks]
+                .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                .slice(0, 4)
+                .map((blk) => (
+                  <li key={blk.id} className="px-5 py-3 flex items-center justify-between gap-4 text-xs">
+                    <span className="font-mono tabular-nums text-zinc-500">
+                      {formatTime12h(blk.startTime)} – {formatTime12h(blk.endTime)}
+                    </span>
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100 flex-1 truncate">
+                      {blk.title}
+                    </span>
+                    <span className="text-zinc-500">{blk.category}</span>
+                  </li>
+                ))}
+            </ul>
+          </section>
         </div>
 
-        {/* Right 5 Cols: Attendance Alerts + Daily Habits + Scratchpad */}
         <div className="lg:col-span-5 space-y-6">
           <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">

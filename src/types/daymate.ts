@@ -144,6 +144,50 @@ export interface BookmarkItem {
   description: string;
 }
 
+export interface InternalAssessmentItem {
+  id: string;
+  subjectCode: string;
+  subjectName: string;
+  ia1: number;
+  ia2: number;
+  labAndAssignment: number;
+  maxTotal: number;
+}
+
+export interface VivaQuestionItem {
+  id: string;
+  subject: string;
+  question: string;
+  answer: string;
+  confident: boolean;
+}
+
+export interface DirectoryContact {
+  id: string;
+  name: string;
+  role: 'Faculty' | 'Classmate' | 'Lab Partner' | 'Mentor';
+  subjectOrDept: string;
+  email: string;
+  phoneOrRoom: string;
+}
+
+export interface ProjectMilestone {
+  id: string;
+  title: string;
+  phase: string;
+  dueDate: string;
+  completed: boolean;
+  deliverable: string;
+}
+
+export interface TimeBlockItem {
+  id: string;
+  startTime: string; // HH:MM
+  endTime: string; // HH:MM
+  title: string;
+  category: 'Study' | 'Lecture' | 'Break' | 'Project';
+}
+
 export interface StudentProfile {
   id: string;
   name: string;
@@ -159,6 +203,8 @@ export interface StudentProfile {
   previousCredits: number;
   previousCgpa: number;
   passwordHash?: string;
+  photoURL?: string;
+  authProvider?: 'google' | 'password' | 'demo';
 }
 
 export interface DayMateState {
@@ -179,4 +225,9 @@ export interface DayMateState {
   habits: HabitItem[];
   expenses: ExpenseItem[];
   bookmarks: BookmarkItem[];
+  assessments: InternalAssessmentItem[];
+  vivaQuestions: VivaQuestionItem[];
+  contacts: DirectoryContact[];
+  milestones: ProjectMilestone[];
+  timeBlocks: TimeBlockItem[];
 }

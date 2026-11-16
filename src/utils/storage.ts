@@ -161,6 +161,11 @@ export function loadState(fallback: DayMateState): DayMateState {
       habits: Array.isArray(parsed.habits) ? parsed.habits : fallback.habits,
       expenses: Array.isArray(parsed.expenses) ? parsed.expenses : fallback.expenses,
       bookmarks: Array.isArray(parsed.bookmarks) ? parsed.bookmarks : fallback.bookmarks,
+      assessments: Array.isArray(parsed.assessments) ? parsed.assessments : fallback.assessments,
+      vivaQuestions: Array.isArray(parsed.vivaQuestions) ? parsed.vivaQuestions : fallback.vivaQuestions,
+      contacts: Array.isArray(parsed.contacts) ? parsed.contacts : fallback.contacts,
+      milestones: Array.isArray(parsed.milestones) ? parsed.milestones : fallback.milestones,
+      timeBlocks: Array.isArray(parsed.timeBlocks) ? parsed.timeBlocks : fallback.timeBlocks,
     };
   } catch {
     return fallback;

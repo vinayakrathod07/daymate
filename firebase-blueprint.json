@@ -1,0 +1,138 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private student profile, academic metadata, and workspace preferences.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "rollNumber": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "course": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "semester": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "section": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "college": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "facultyMentor": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "academicYear": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "monthlyBudget": {
+          "type": "number"
+        },
+        "previousCredits": {
+          "type": "number"
+        },
+        "previousCgpa": {
+          "type": "number"
+        },
+        "scratchpad": {
+          "type": "string",
+          "maxLength": 8000
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["light", "dark"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "name", "email", "createdAt", "updatedAt"]
+    },
+    "AcademicRecord": {
+      "title": "AcademicRecord",
+      "description": "Typed student planner record stored as native Firestore maps.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "task",
+            "timetable",
+            "event",
+            "attendance",
+            "note",
+            "flashcard",
+            "session",
+            "exam",
+            "gpa",
+            "habit",
+            "expense",
+            "bookmark",
+            "assessment",
+            "viva",
+            "contact",
+            "milestone",
+            "timeblock"
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "description": "Native Firestore map containing domain attributes for the record kind"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "kind", "payload", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/private/profile": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private profile and preferences for an authenticated student."
+    },
+    "/users/{userId}/records/{recordId}": {
+      "schema": { "$ref": "#/entities/AcademicRecord" },
+      "description": "Owner-scoped student academic records stored with native Firestore maps."
+    }
+  }
+}

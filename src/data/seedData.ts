@@ -21,12 +21,13 @@ export function createSeedState(): DayMateState {
     previousCredits: 84,
     previousCgpa: 8.42,
     passwordHash: simpleHash('daymate123'),
+    authProvider: 'demo' as const,
   };
 
   return {
     profile: demoProfile,
     accounts: [demoProfile],
-    isAuthenticated: true,
+    isAuthenticated: false,
     theme: 'light',
     scratchpad:
       'CSA3426 Mini-Project Checklist:\n- Verify blank-title validation on Add Task\n- Test 75% attendance formula edge cases\n- Prepare JSON backup before Review 1 demo with Ms. Rajitha Reddy',
@@ -41,7 +42,7 @@ export function createSeedState(): DayMateState {
         status: 'in-progress',
         completed: false,
         estimatedMinutes: 120,
-        notes: 'Demonstrate all 9 modules with localStorage persistence and validation.',
+        notes: 'Demonstrate all modules with cloud sync, localStorage persistence, and validation.',
         subtasks: [
           { id: 'st_1', title: 'Complete Attendance 75% calculator test cases', completed: true },
           { id: 'st_2', title: 'Verify CSV & JSON export downloads', completed: true },
@@ -492,6 +493,100 @@ export function createSeedState(): DayMateState {
         subject: 'Computer Science Core',
         description: 'Interactive animations for sorting, trees, and graph algorithms.',
       },
+    ],
+    assessments: [
+      { id: 'ia_1', subjectCode: 'CSA3426', subjectName: 'Frontend Using JavaScript', ia1: 14, ia2: 13, labAndAssignment: 19, maxTotal: 50 },
+      { id: 'ia_2', subjectCode: 'CSA3201', subjectName: 'Database Management Systems', ia1: 12, ia2: 14, labAndAssignment: 18, maxTotal: 50 },
+      { id: 'ia_3', subjectCode: 'CSA3204', subjectName: 'Operating Systems', ia1: 11, ia2: 12, labAndAssignment: 17, maxTotal: 50 },
+      { id: 'ia_4', subjectCode: 'CSA3208', subjectName: 'Software Engineering', ia1: 13, ia2: 14, labAndAssignment: 18, maxTotal: 50 },
+    ],
+    vivaQuestions: [
+      {
+        id: 'viv_1',
+        subject: 'CSA3426 Frontend Using JS',
+        question: 'Explain the difference between == and === in JavaScript.',
+        answer: '== performs loose equality with type coercion (e.g., "5" == 5 is true), whereas === performs strict equality checking both value and data type without coercion.',
+        confident: true,
+      },
+      {
+        id: 'viv_2',
+        subject: 'CSA3426 Frontend Using JS',
+        question: 'How does the browser Event Loop handle asynchronous callbacks?',
+        answer: 'Synchronous code executes on the Call Stack. Web APIs handle timers/events, placing callbacks into Microtask (Promises) and Macrotask (setTimeout) queues, which the Event Loop pushes onto the Call Stack when empty.',
+        confident: false,
+      },
+      {
+        id: 'viv_3',
+        subject: 'Database Management Systems',
+        question: 'What is the difference between PRIMARY KEY and UNIQUE constraint?',
+        answer: 'A table can have only one PRIMARY KEY and it cannot contain NULL values. A table can have multiple UNIQUE constraints and they typically allow NULLs.',
+        confident: true,
+      },
+      {
+        id: 'viv_4',
+        subject: 'Operating Systems',
+        question: 'What are the four Coffman conditions required for a deadlock?',
+        answer: 'Mutual Exclusion, Hold and Wait, No Preemption, and Circular Wait.',
+        confident: false,
+      },
+    ],
+    contacts: [
+      {
+        id: 'cnt_1',
+        name: 'Ms. Rajitha Reddy',
+        role: 'Faculty',
+        subjectOrDept: 'CSA3426 Frontend Using JS',
+        email: 'rajitha.reddy@presidencyuniversity.in',
+        phoneOrRoom: 'SOCS Cabin C-312',
+      },
+      {
+        id: 'cnt_2',
+        name: 'Prof. Arvind Kumar',
+        role: 'Faculty',
+        subjectOrDept: 'Database Management Systems',
+        email: 'arvind.kumar@presidencyuniversity.in',
+        phoneOrRoom: 'SOCS Cabin C-218',
+      },
+      {
+        id: 'cnt_3',
+        name: 'Rohan Sharma',
+        role: 'Lab Partner',
+        subjectOrDept: 'BCA-A · DBMS & OS Lab',
+        email: 'rohan.sharma@presidencyuniversity.in',
+        phoneOrRoom: '+91 98450 11223',
+      },
+    ],
+    milestones: [
+      {
+        id: 'ms_1',
+        title: 'Project Abstract & Synopsis Approval',
+        phase: 'Phase 1',
+        dueDate: addDays(-5),
+        completed: true,
+        deliverable: '1-page abstract signed by Ms. Rajitha Reddy',
+      },
+      {
+        id: 'ms_2',
+        title: 'Review 1: UI Prototype & Core Modules',
+        phase: 'Phase 2',
+        dueDate: addDays(2),
+        completed: false,
+        deliverable: 'Working frontend with validation & storage',
+      },
+      {
+        id: 'ms_3',
+        title: 'Final Report Documentation & Viva Voce',
+        phase: 'Phase 3',
+        dueDate: addDays(14),
+        completed: false,
+        deliverable: 'Spiral-bound report + live demonstration',
+      },
+    ],
+    timeBlocks: [
+      { id: 'tb_1', startTime: '07:00', endTime: '08:00', title: 'Morning Revision & Flashcards', category: 'Study' },
+      { id: 'tb_2', startTime: '09:00', endTime: '12:30', title: 'College Lectures & Labs', category: 'Lecture' },
+      { id: 'tb_3', startTime: '16:30', endTime: '18:00', title: 'CSA3426 Mini-Project Coding', category: 'Project' },
+      { id: 'tb_4', startTime: '20:30', endTime: '21:30', title: 'DBMS Assignment & Viva Prep', category: 'Study' },
     ],
   };
 }

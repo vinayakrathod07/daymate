@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isSignedIn()
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true;
+    }
+
+    function isValidProfile(data) {
+      return data.keys().hasAll(['ownerId', 'name', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'email', 'rollNumber', 'course', 'semester', 'section',
+          'college', 'facultyMentor', 'academicYear', 'monthlyBudget', 'previousCredits',
+          'previousCgpa', 'scratchpad', 'theme', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId is string
+        && data.ownerId == request.auth.uid
+        && data.ownerId.size() <= 128
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 120
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 160
+        && (!('rollNumber' in data) || (data.rollNumber is string && data.rollNumber.size() <= 40))
+        && (!('course' in data) || (data.course is string && data.course.size() <= 120))
+        && (!('semester' in data) || (data.semester is string && data.semester.size() <= 40))
+        && (!('section' in data) || (data.section is string && data.section.size() <= 40))
+        && (!('college' in data) || (data.college is string && data.college.size() <= 160))
+        && (!('facultyMentor' in data) || (data.facultyMentor is string && data.facultyMentor.size() <= 120))
+        && (!('academicYear' in data) || (data.academicYear is string && data.academicYear.size() <= 32))
+        && (!('monthlyBudget' in data) || (data.monthlyBudget is number && data.monthlyBudget >= 0))
+        && (!('previousCredits' in data) || (data.previousCredits is number && data.previousCredits >= 0))
+        && (!('previousCgpa' in data) || (data.previousCgpa is number && data.previousCgpa >= 0 && data.previousCgpa <= 10))
+        && (!('scratchpad' in data) || (data.scratchpad is string && data.scratchpad.size() <= 8000))
+        && (!('theme' in data) || (data.theme in ['light', 'dark']))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidRecordKind(kind) {
+      return kind in [
+        'task', 'timetable', 'event', 'attendance', 'note', 'flashcard',
+        'session', 'exam', 'gpa', 'habit', 'expense', 'bookmark',
+        'assessment', 'viva', 'contact', 'milestone', 'timeblock'
+      ];
+    }
+
+    function isValidAcademicRecord(data) {
+      return data.keys().hasAll(['ownerId', 'kind', 'payload', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'kind', 'payload', 'createdAt', 'updatedAt'])
+        && data.ownerId is string
+        && data.ownerId == request.auth.uid
+        && data.ownerId.size() <= 128
+        && isValidRecordKind(data.kind)
+        && data.payload is map
+        && data.payload.keys().size() <= 30
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId}/private/profile {
+      allow get: if isValidId(userId) && isVerifiedOwner(userId);
+      allow create: if isValidId(userId)
+        && isVerifiedOwner(userId)
+        && isValidProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isVerifiedOwner(userId)
+        && isValidProfile(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'email', 'rollNumber', 'course', 'semester', 'section',
+          'college', 'facultyMentor', 'academicYear', 'monthlyBudget', 'previousCredits',
+          'previousCgpa', 'scratchpad', 'theme', 'updatedAt'
+        ]);
+      allow delete: if isValidId(userId) && isVerifiedOwner(userId);
+    }
+
+    match /users/{userId}/records/{recordId} {
+      allow get: if isValidId(userId) && isValidId(recordId) && isVerifiedOwner(userId);
+      allow list: if isValidId(userId)
+        && isVerifiedOwner(userId)
+        && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(userId)
+        && isValidId(recordId)
+        && isVerifiedOwner(userId)
+        && isValidAcademicRecord(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isValidId(recordId)
+        && isVerifiedOwner(userId)
+        && isValidAcademicRecord(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().kind == existing().kind
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['payload', 'updatedAt']);
+      allow delete: if isValidId(userId)
+        && isValidId(recordId)
+        && isVerifiedOwner(userId)
+        && existing().ownerId == request.auth.uid;
+    }
+  }
+}

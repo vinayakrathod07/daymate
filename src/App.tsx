@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard,
   CheckSquare,
@@ -15,9 +15,16 @@ import {
   Menu,
   X,
 } from 'lucide-react';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { createSeedState } from './data/seedData';
-import { DayMateState, NavSection } from './types/daymate';
+import { DayMateState, NavSection, StudentProfile } from './types/daymate';
 import { loadState, saveState, toLocalDateString } from './utils/storage';
+import {
+  auth,
+  loadWorkspaceFromCloud,
+  saveWorkspaceToCloud,
+  signOutFirebase,
+} from './services/firebase';
 import { AuthScreen } from './components/AuthScreen';
 import { DashboardView } from './components/DashboardView';
 import { TasksView } from './components/TasksView';
@@ -48,10 +55,73 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // Persist every state mutation to browser localStorage
+  // Firebase Auth tracking
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const skipNextCloudSyncRef = useRef(false);
+
+  // Listen to Firebase Auth state
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      setFirebaseUser(user);
+      if (user && user.emailVerified) {
+        try {
+          setCloudSyncStatus('syncing');
+          const cloudData = await loadWorkspaceFromCloud(user, loadState(createSeedState()));
+          if (cloudData) {
+            skipNextCloudSyncRef.current = true;
+            setState(cloudData);
+          } else {
+            // Seed initial cloud workspace for first-time Google user
+            const seed = createSeedState();
+            const initialForUser: DayMateState = {
+              ...seed,
+              isAuthenticated: true,
+              profile: {
+                ...seed.profile,
+                id: user.uid,
+                name: user.displayName || seed.profile.name,
+                email: user.email || seed.profile.email,
+                photoURL: user.photoURL || undefined,
+                authProvider: user.providerData[0]?.providerId === 'google.com' ? 'google' : 'password',
+              },
+            };
+            skipNextCloudSyncRef.current = true;
+            setState(initialForUser);
+            await saveWorkspaceToCloud(user, initialForUser);
+          }
+          setCloudSyncStatus('synced');
+        } catch {
+          setCloudSyncStatus('error');
+        }
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Persist every state mutation to localStorage
   useEffect(() => {
     saveState(state);
   }, [state]);
+
+  // Debounced auto-sync to Firestore whenever authenticated via Firebase
+  useEffect(() => {
+    if (!firebaseUser || !firebaseUser.emailVerified || !state.isAuthenticated) return undefined;
+    if (skipNextCloudSyncRef.current) {
+      skipNextCloudSyncRef.current = false;
+      return undefined;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        setCloudSyncStatus('syncing');
+        await saveWorkspaceToCloud(firebaseUser, state);
+        setCloudSyncStatus('synced');
+      } catch {
+        setCloudSyncStatus('error');
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [state, firebaseUser]);
 
   // Sync Tailwind dark class on <html>
   useEffect(() => {
@@ -70,18 +140,75 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  const handleFirebaseAuthSuccess = useCallback(
+    async (user: User, extraProfile?: Partial<StudentProfile>) => {
+      setFirebaseUser(user);
+      if (user.emailVerified) {
+        try {
+          setCloudSyncStatus('syncing');
+          const cloudData = await loadWorkspaceFromCloud(user, state);
+          if (cloudData) {
+            skipNextCloudSyncRef.current = true;
+            setState(cloudData);
+            setCloudSyncStatus('synced');
+            return;
+          }
+        } catch {
+          setCloudSyncStatus('error');
+        }
+      }
+      const base = createSeedState();
+      const nextState: DayMateState = {
+        ...base,
+        isAuthenticated: true,
+        profile: {
+          ...base.profile,
+          ...extraProfile,
+          id: user.uid,
+          name: extraProfile?.name || user.displayName || base.profile.name,
+          email: extraProfile?.email || user.email || base.profile.email,
+          photoURL: user.photoURL || undefined,
+          authProvider: user.providerData[0]?.providerId === 'google.com' ? 'google' : 'password',
+        },
+      };
+      setState(nextState);
+      if (user.emailVerified) {
+        try {
+          await saveWorkspaceToCloud(user, nextState);
+          setCloudSyncStatus('synced');
+        } catch {
+          setCloudSyncStatus('error');
+        }
+      }
+    },
+    [state],
+  );
+
+  const handleSignOut = async () => {
+    try {
+      if (firebaseUser) {
+        await signOutFirebase();
+      }
+    } catch {
+      // Ignore Firebase signout errors
+    }
+    setFirebaseUser(null);
+    setCloudSyncStatus('idle');
+    setState((prev) => ({ ...prev, isAuthenticated: false }));
+  };
+
   if (!state.isAuthenticated) {
     return (
       <AuthScreen
         accounts={state.accounts}
-        onLogin={(profile) =>
+        onLocalLogin={(profile) =>
           setState((prev) => ({
             ...prev,
             profile,
             isAuthenticated: true,
           }))
         }
-        onRegister={(newProfile) =>
+        onLocalRegister={(newProfile) =>
           setState((prev) => ({
             ...prev,
             profile: newProfile,
@@ -89,6 +216,7 @@ export default function App() {
             isAuthenticated: true,
           }))
         }
+        onFirebaseAuthSuccess={handleFirebaseAuthSuccess}
       />
     );
   }
@@ -110,7 +238,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex">
-      {/* Mobile Sidebar Backdrop */}
       {mobileMenuOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
@@ -176,20 +303,31 @@ export default function App() {
         </nav>
 
         {/* Student Identity Footer */}
-        <div className="p-3 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
+        <div className="p-3 border-t border-zinc-200 dark:border-zinc-800">
           <button
             type="button"
             onClick={() => handleNavigate('settings')}
             className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left transition-colors"
           >
-            <div className="w-8 h-8 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-bold flex items-center justify-center shrink-0">
-              {initials || 'ST'}
-            </div>
+            {state.profile.photoURL ? (
+              <img
+                src={state.profile.photoURL}
+                alt={state.profile.name}
+                referrerPolicy="no-referrer"
+                className="w-8 h-8 rounded-lg object-cover shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-bold flex items-center justify-center shrink-0">
+                {initials || 'ST'}
+              </div>
+            )}
             <div className="min-w-0">
               <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
                 {state.profile.name}
               </p>
-              <p className="text-[11px] text-zinc-500 font-mono truncate">{state.profile.rollNumber}</p>
+              <p className="text-[11px] text-zinc-500 font-mono truncate">
+                {firebaseUser?.email || state.profile.rollNumber}
+              </p>
             </div>
           </button>
         </div>
@@ -197,7 +335,6 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Workspace Header */}
         <header className="h-14 px-4 sm:px-8 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-4 sticky top-0 z-30">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -243,7 +380,6 @@ export default function App() {
           </div>
         </header>
 
-        {/* Active Module Viewport */}
         <main className="flex-1 p-4 sm:p-8 max-w-[1280px] w-full mx-auto">
           {activeSection === 'dashboard' && (
             <DashboardView
@@ -283,6 +419,7 @@ export default function App() {
           {activeSection === 'tasks' && (
             <TasksView
               tasks={state.tasks}
+              milestones={state.milestones}
               onAddTask={(task) => setState((prev) => ({ ...prev, tasks: [task, ...prev.tasks] }))}
               onUpdateTask={(updated) =>
                 setState((prev) => ({
@@ -295,6 +432,23 @@ export default function App() {
               }
               onClearCompleted={() =>
                 setState((prev) => ({ ...prev, tasks: prev.tasks.filter((t) => !t.completed) }))
+              }
+              onAddMilestone={(ms) =>
+                setState((prev) => ({ ...prev, milestones: [...prev.milestones, ms] }))
+              }
+              onToggleMilestone={(id) =>
+                setState((prev) => ({
+                  ...prev,
+                  milestones: prev.milestones.map((m) =>
+                    m.id === id ? { ...m, completed: !m.completed } : m,
+                  ),
+                }))
+              }
+              onDeleteMilestone={(id) =>
+                setState((prev) => ({
+                  ...prev,
+                  milestones: prev.milestones.filter((m) => m.id !== id),
+                }))
               }
             />
           )}
@@ -353,6 +507,7 @@ export default function App() {
               notes={state.notes}
               flashcards={state.flashcards}
               sessions={state.studySessions}
+              vivaQuestions={state.vivaQuestions}
               onAddNote={(note) => setState((prev) => ({ ...prev, notes: [note, ...prev.notes] }))}
               onUpdateNote={(updated) =>
                 setState((prev) => ({
@@ -380,6 +535,23 @@ export default function App() {
               }
               onLogSession={(session) =>
                 setState((prev) => ({ ...prev, studySessions: [...prev.studySessions, session] }))
+              }
+              onAddViva={(q) =>
+                setState((prev) => ({ ...prev, vivaQuestions: [...prev.vivaQuestions, q] }))
+              }
+              onToggleVivaConfident={(id) =>
+                setState((prev) => ({
+                  ...prev,
+                  vivaQuestions: prev.vivaQuestions.map((v) =>
+                    v.id === id ? { ...v, confident: !v.confident } : v,
+                  ),
+                }))
+              }
+              onDeleteViva={(id) =>
+                setState((prev) => ({
+                  ...prev,
+                  vivaQuestions: prev.vivaQuestions.filter((v) => v.id !== id),
+                }))
               }
             />
           )}
@@ -422,6 +594,21 @@ export default function App() {
                 setState((prev) => ({
                   ...prev,
                   profile: { ...prev.profile, previousCredits: credits, previousCgpa: cgpa },
+                }))
+              }
+              onAddAssessment={(item) =>
+                setState((prev) => ({ ...prev, assessments: [...prev.assessments, item] }))
+              }
+              onUpdateAssessment={(updated) =>
+                setState((prev) => ({
+                  ...prev,
+                  assessments: prev.assessments.map((a) => (a.id === updated.id ? updated : a)),
+                }))
+              }
+              onDeleteAssessment={(id) =>
+                setState((prev) => ({
+                  ...prev,
+                  assessments: prev.assessments.filter((a) => a.id !== id),
                 }))
               }
             />
@@ -478,12 +665,42 @@ export default function App() {
                   bookmarks: prev.bookmarks.filter((b) => b.id !== id),
                 }))
               }
+              onAddTimeBlock={(tb) =>
+                setState((prev) => ({ ...prev, timeBlocks: [...prev.timeBlocks, tb] }))
+              }
+              onDeleteTimeBlock={(id) =>
+                setState((prev) => ({
+                  ...prev,
+                  timeBlocks: prev.timeBlocks.filter((t) => t.id !== id),
+                }))
+              }
+              onAddContact={(c) =>
+                setState((prev) => ({ ...prev, contacts: [...prev.contacts, c] }))
+              }
+              onDeleteContact={(id) =>
+                setState((prev) => ({
+                  ...prev,
+                  contacts: prev.contacts.filter((c) => c.id !== id),
+                }))
+              }
             />
           )}
 
           {activeSection === 'settings' && (
             <SettingsReportView
               state={state}
+              cloudUserEmail={firebaseUser?.email || null}
+              cloudSyncStatus={cloudSyncStatus}
+              onManualCloudSync={async () => {
+                if (!firebaseUser) return;
+                try {
+                  setCloudSyncStatus('syncing');
+                  await saveWorkspaceToCloud(firebaseUser, state);
+                  setCloudSyncStatus('synced');
+                } catch {
+                  setCloudSyncStatus('error');
+                }
+              }}
               onUpdateProfile={(profile) =>
                 setState((prev) => ({
                   ...prev,
@@ -494,7 +711,7 @@ export default function App() {
               onImportState={(imported) =>
                 setState((prev) => ({ ...prev, ...imported, isAuthenticated: true }))
               }
-              onResetDemo={() => setState(createSeedState())}
+              onResetDemo={() => setState({ ...createSeedState(), isAuthenticated: true })}
               onClearAll={() =>
                 setState((prev) => ({
                   ...prev,
@@ -511,9 +728,14 @@ export default function App() {
                   habits: [],
                   expenses: [],
                   bookmarks: [],
+                  assessments: [],
+                  vivaQuestions: [],
+                  contacts: [],
+                  milestones: [],
+                  timeBlocks: [],
                 }))
               }
-              onSignOut={() => setState((prev) => ({ ...prev, isAuthenticated: false }))}
+              onSignOut={handleSignOut}
             />
           )}
         </main>
